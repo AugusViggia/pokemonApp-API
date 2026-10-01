@@ -1,32 +1,33 @@
-const { Pokemon, Type } = require("../../db");
+const { Pokemon, Type, CatalogPokemon } = require("../../db");
 const { Op } = require("sequelize");
 const { pokemonFilterForApi, pokemonFilterDb } =
     require("./FiltersObjectReturns");
-const { getPokemonDetailsByName } = require("../../services/pokeApiService");
+const { ensurePokemonCatalog } = require("../../services/pokeApiService");
 
 const getPokemonByName = async (name) => {
     const nameToLowerCase = name.toLowerCase();
+    await ensurePokemonCatalog();
 
-    const dataBasePokemons = await Pokemon.findAll({
-        where: {
-            name: { [Op.iLike]: `%${nameToLowerCase}%` },
-        },
-        include: {
-            model: Type,
-            as: "types",
-            attributes: ["name"],
-        },
-    });
-
-    const pokemonDataDetailed = await getPokemonDetailsByName(nameToLowerCase);
-
-    const filteredInApi = pokemonDataDetailed.filter((pokemon) =>
-        pokemon.name.toLowerCase().includes(nameToLowerCase),
-    );
+    const where = { name: { [Op.iLike]: `%${nameToLowerCase}%` } };
+    const [dataBasePokemons, catalogRows] = await Promise.all([
+        Pokemon.findAll({
+            where,
+            include: {
+                model: Type,
+                as: "types",
+                attributes: ["name"],
+            },
+        }),
+        CatalogPokemon.findAll({
+            where: { ...where, isDefault: true },
+            order: [["id", "ASC"]],
+            attributes: ["data"],
+        }),
+    ]);
 
     return [
         ...pokemonFilterDb(dataBasePokemons),
-        ...pokemonFilterForApi(filteredInApi),
+        ...pokemonFilterForApi(catalogRows.map((row) => row.data)),
     ];
 };
 

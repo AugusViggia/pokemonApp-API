@@ -1,4 +1,4 @@
-const { Pokemon, Type } = require("../../db");
+const { Pokemon, Type, CatalogPokemon } = require("../../db");
 const axios = require("axios");
 const { pokemonFilterForApi } = require("./FiltersObjectReturns");
 require("dotenv").config();
@@ -223,7 +223,7 @@ const enrichExternalPokemon = async (pokemon) => {
 const getPokemonById = async (id, source) => {
   const pokemon =
     source === "api"
-      ? (await axios(`${API_URL}/pokemon/${id}`)).data
+      ? ((await CatalogPokemon.findByPk(id))?.data || (await axios(`${API_URL}/pokemon/${id}`)).data)
       : await Pokemon.findByPk(id, {
           include: {
             model: Type,

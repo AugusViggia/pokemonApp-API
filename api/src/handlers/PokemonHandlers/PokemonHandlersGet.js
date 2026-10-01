@@ -8,11 +8,14 @@ const OK = 200;
 const err = 400;
 
 const getPokemonsHandler = async (req, res) => {
-    const { name } = req.query;
-
-    const results = name ? await getPokemonByName(name) : await getAllPokemons();
-
-    res.status(OK).json(results);
+    try {
+        const { name } = req.query;
+        const results = name ? await getPokemonByName(name) : await getAllPokemons();
+        res.status(OK).json(results);
+    } catch (error) {
+        console.error("Error obtaining Pokémon catalog:", error);
+        res.status(500).json({ error: "Unable to obtain Pokémon catalog" });
+    }
 };
 
 const getPokemonByIdHandler = async (req, res) => {
@@ -28,9 +31,8 @@ const getPokemonByIdHandler = async (req, res) => {
 };
 
 const getPokemonByNameHandler = async (req, res) => {
-    const { name } = req.query;
-
     try {
+        const { name } = req.query;
         const pokemon = await getPokemonByName(name);
 
         if (pokemon.length > 0) {

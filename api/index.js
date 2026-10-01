@@ -19,6 +19,10 @@
 //                       ~~~~~~~~~
 const server = require("./src/app.js");
 const { conn, Pokemon } = require("./src/db.js");
+const {
+  schedulePokemonCatalogSync,
+  SYNC_CHECK_INTERVAL_MS,
+} = require("./src/services/pokeApiService.js");
 
 conn
   .sync({ alter: true })
@@ -31,6 +35,9 @@ conn
     const port = process.env.PORT || 3001;
     server.listen(port, () => {
       console.log(`API listening at ${port}`);
+      schedulePokemonCatalogSync();
+      const syncTimer = setInterval(schedulePokemonCatalogSync, SYNC_CHECK_INTERVAL_MS);
+      syncTimer.unref();
     });
   })
   .catch((error) => {

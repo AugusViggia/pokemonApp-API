@@ -1,22 +1,30 @@
-const { Pokemon, Type } = require("../../db");
+const { Pokemon, Type, CatalogPokemon } = require("../../db");
 const { pokemonFilterForApi, pokemonFilterDb } =
     require("./FiltersObjectReturns");
-const { getAllPokemonDetails } = require("../../services/pokeApiService");
+const { ensurePokemonCatalog } = require("../../services/pokeApiService");
 
 const getAllPokemons = async () => {
-    const dataBasePokemons = await Pokemon.findAll({
-        include: {
-            model: Type,
-            as: "types",
-            attributes: ["name"],
-        },
-    });
+    await ensurePokemonCatalog();
 
-    const apiPokemonData = await getAllPokemonDetails();
-    const apiPokemons = pokemonFilterForApi(apiPokemonData);
-    const dataBaseFiltered = pokemonFilterDb(dataBasePokemons);
+    const [dataBasePokemons, catalogRows] = await Promise.all([
+        Pokemon.findAll({
+            include: {
+                model: Type,
+                as: "types",
+                attributes: ["name"],
+            },
+        }),
+        CatalogPokemon.findAll({
+            where: { isDefault: true },
+            order: [["id", "ASC"]],
+            attributes: ["data"],
+        }),
+    ]);
 
-    return [...dataBaseFiltered, ...apiPokemons];
+    return [
+        ...pokemonFilterDb(dataBasePokemons),
+        ...pokemonFilterForApi(catalogRows.map((row) => row.data)),
+    ];
 };
 
 module.exports = {
