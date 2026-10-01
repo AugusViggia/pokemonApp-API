@@ -1,10 +1,8 @@
 const { Pokemon, Type } = require("../../db");
-const axios = require("axios");
 const { Op } = require("sequelize");
 const { pokemonFilterForApi, pokemonFilterDb } =
     require("./FiltersObjectReturns");
-require("dotenv").config();
-const { API_URL } = process.env;
+const { getPokemonDetailsByName } = require("../../services/pokeApiService");
 
 const getPokemonByName = async (name) => {
     const nameToLowerCase = name.toLowerCase();
@@ -20,30 +18,16 @@ const getPokemonByName = async (name) => {
         },
     });
 
-    const apiPokemonsRaw = await axios(
-        `${API_URL}/pokemon?limit=251`
-    );
-
-    const pokemonData = apiPokemonsRaw.data.results;
-
-    const pokemonUrlRequests = pokemonData.map((pokemon) =>
-        axios.get(pokemon.url)
-    );
-
-    const pokemonUrlResponses = await Promise.all(pokemonUrlRequests);
-
-    const pokemonDataDetailed = pokemonUrlResponses.map(
-        (response) => response.data
-    );
+    const pokemonDataDetailed = await getPokemonDetailsByName(nameToLowerCase);
 
     const filteredInApi = pokemonDataDetailed.filter((pokemon) =>
-        pokemon.name.toLowerCase().includes(nameToLowerCase)
+        pokemon.name.toLowerCase().includes(nameToLowerCase),
     );
 
-    const dataBaseFiltered = pokemonFilterDb(dataBasePokemons);
-    const apiFilteredInfo = pokemonFilterForApi(filteredInApi)
-
-    return [...dataBaseFiltered, ...apiFilteredInfo];
+    return [
+        ...pokemonFilterDb(dataBasePokemons),
+        ...pokemonFilterForApi(filteredInApi),
+    ];
 };
 
 module.exports = { getPokemonByName };

@@ -1,9 +1,7 @@
 const { Pokemon, Type } = require("../../db");
-const axios = require("axios");
 const { pokemonFilterForApi, pokemonFilterDb } =
     require("./FiltersObjectReturns");
-require("dotenv").config();
-const { API_URL } = process.env;
+const { getAllPokemonDetails } = require("../../services/pokeApiService");
 
 const getAllPokemons = async () => {
     const dataBasePokemons = await Pokemon.findAll({
@@ -14,19 +12,8 @@ const getAllPokemons = async () => {
         },
     });
 
-    const apiPokemonsRaw = await axios(`${API_URL}/pokemon?limit=251`);
-
-    const pokemonUrls = apiPokemonsRaw.data?.results.map(
-        (pokemon) => pokemon.url
-    );
-    const pokemonUrlRequests = pokemonUrls.map((url) => axios.get(url));
-
-    const pokemonUrlResponses = await Promise.all(pokemonUrlRequests);
-
-    const pokemonData = pokemonUrlResponses.map((response) => response.data);
-
-    const apiPokemons = pokemonFilterForApi(pokemonData);
-
+    const apiPokemonData = await getAllPokemonDetails();
+    const apiPokemons = pokemonFilterForApi(apiPokemonData);
     const dataBaseFiltered = pokemonFilterDb(dataBasePokemons);
 
     return [...dataBaseFiltered, ...apiPokemons];
