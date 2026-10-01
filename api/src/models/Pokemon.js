@@ -18,6 +18,10 @@ module.exports = (sequelize) => {
       image: {
         type: DataTypes.TEXT,
       },
+      shinyImage: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
       hp: {
         type: DataTypes.STRING,
         allowNull: false,

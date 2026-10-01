@@ -34,7 +34,7 @@ const pokemonFilterDb = (arr) =>
       hp: pokemon.hp,
       image: pokemon.image,
       normalImage: pokemon.image,
-      shinyImage: null,
+      shinyImage: pokemon.shinyImage || null,
       attack: pokemon.attack,
       defense: pokemon.defense,
       speed: pokemon.speed,

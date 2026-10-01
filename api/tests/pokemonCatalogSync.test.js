@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createPokemonCatalogSync } = require("../src/services/pokeApiService");
-const { Pokemon, CatalogPokemon, PokemonCatalogSync, conn } = require("../src/db");
+const { Pokemon, Type, CatalogPokemon, PokemonCatalogSync, conn } = require("../src/db");
 const app = require("../src/app");
 const axios = require("axios");
 
@@ -284,4 +284,64 @@ test("GET /pokemon returns a database-paginated catalog and applies validated se
   assert.equal(cappedResponse.status, 200);
   assert.equal(invalidResponse.status, 400);
   assert.deepEqual(apiCalls, []);
+});
+
+test("POST /pokemon/post stores an optional shiny image and still accepts it when omitted", async (t) => {
+  const originalMethods = {
+    pokemonCreate: Pokemon.create,
+    pokemonFindByPk: Pokemon.findByPk,
+    typeCount: Type.count,
+  };
+  const createdRows = [];
+  let nextId = 1;
+  Pokemon.create = async (attributes) => {
+    const row = { id: `created-${nextId++}`, ...attributes };
+    createdRows.push(row);
+    return { id: row.id, addTypes: async () => {} };
+  };
+  Pokemon.findByPk = async (id) => createdRows.find((row) => row.id === id);
+  Type.count = async ({ where }) => where.id.length;
+
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    Pokemon.create = originalMethods.pokemonCreate;
+    Pokemon.findByPk = originalMethods.pokemonFindByPk;
+    Type.count = originalMethods.typeCount;
+  });
+
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const pokemonInput = {
+    name: "shiny-testmon",
+    height: 10,
+    weight: 10,
+    hp: 10,
+    image: "data:image/jpeg;base64,bm9ybWFs",
+    attack: 10,
+    defense: 10,
+    speed: 10,
+    types: [1],
+  };
+  const shinyResponse = await fetch(`${baseUrl}/pokemon/post`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...pokemonInput, shinyImage: "data:image/jpeg;base64,c2hpbnk=" }),
+  });
+  const normalOnlyResponse = await fetch(`${baseUrl}/pokemon/post`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(pokemonInput),
+  });
+  const invalidShinyResponse = await fetch(`${baseUrl}/pokemon/post`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...pokemonInput, shinyImage: "not-an-image" }),
+  });
+
+  assert.equal(shinyResponse.status, 200);
+  assert.equal(normalOnlyResponse.status, 200);
+  assert.equal(invalidShinyResponse.status, 400);
+  assert.equal(createdRows[0].shinyImage, "data:image/jpeg;base64,c2hpbnk=");
+  assert.equal(Object.prototype.hasOwnProperty.call(createdRows[1], "shinyImage"), false);
 });
