@@ -11,21 +11,32 @@ const server = express();
 
 server.name = 'API';
 
+const allowedOrigins = new Set([
+  'https://pokemon-app-client-psi.vercel.app',
+  'https://pokemon-app-client-f97ktfi1k-augusviggias-projects.vercel.app',
+]);
+const vercelPreviewOrigin = /^https:\/\/pokemon-app-client-[a-z0-9-]+-augusviggias-projects\.vercel\.app$/;
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin) || vercelPreviewOrigin.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+  optionsSuccessStatus: 204,
+};
+
 // Do not let Express convert successful GET responses into 304 responses.
 // Axios treats 304 as a rejected response, while our frontend expects JSON.
 server.disable('etag');
-server.use(cors());
+server.use(cors(corsOptions));
 server.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 server.use(bodyParser.json({ limit: '50mb' }));
 server.use(cookieParser());
 server.use(morgan('dev'));
-server.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
-  next();
-});
 
 server.use('/', routes);
 
