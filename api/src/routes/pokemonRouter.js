@@ -15,6 +15,7 @@ const pokemonRouter = Router();
 
 pokemonRouter.get("/", getPokemonsHandler);
 pokemonRouter.delete("/:id", deletePokemonHandler);
+pokemonRouter.get("/name/:name", getPokemonByNameHandler);
 pokemonRouter.get("/:id", getPokemonByIdHandler);
 pokemonRouter.get("/name?", getPokemonByNameHandler);
 pokemonRouter.post("/post", postPokemonHandler);

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createPokemonCatalogSync } = require("../src/services/pokeApiService");
-const { Pokemon, CatalogPokemon, PokemonCatalogSync } = require("../src/db");
+const { Pokemon, CatalogPokemon, PokemonCatalogSync, conn } = require("../src/db");
 const app = require("../src/app");
 const axios = require("axios");
 
@@ -200,60 +200,27 @@ test("keeps persisted catalog rows when PokeAPI discovery is unavailable", async
   assert.equal(harness.state.get(1).status, "error");
 });
 
-test("GET /pokemon and GET /pokemon?name serve the compatible response shape from PostgreSQL", async (t) => {
+test("GET /pokemon returns a database-paginated catalog and applies validated server filters", async (t) => {
   const originalMethods = {
-    pokemonFindAll: Pokemon.findAll,
     catalogCount: CatalogPokemon.count,
-    catalogFindAll: CatalogPokemon.findAll,
     syncFindByPk: PokemonCatalogSync.findByPk,
+    query: conn.query,
   };
   const originalAxiosGet = axios.get;
   const apiCalls = [];
-  const catalogPokemon = {
-    id: 25,
-    name: "pikachu",
-    height: 4,
-    weight: 60,
-    stats: [
-      { base_stat: 35 },
-      { base_stat: 55 },
-      { base_stat: 40 },
-      { base_stat: 50 },
-      { base_stat: 50 },
-      { base_stat: 90 },
-    ],
-    sprites: {
-      other: {
-        home: { front_default: "https://assets.test/pikachu.png", front_shiny: "https://assets.test/pikachu-shiny.png" },
-        dream_world: { front_default: "https://assets.test/pikachu-dream.png" },
-      },
-      front_shiny: "https://assets.test/pikachu-shiny-fallback.png",
-    },
-    types: [{ type: { name: "electric" } }],
+  const queryCalls = [];
+  const pageRows = Array.from({ length: 20 }, (_, index) => ({
+    id: String(index + 1), name: `pokemon-${index + 1}`, types: ["electric"], created: false,
+  }));
+  conn.query = async (sql, options) => {
+    queryCalls.push({ sql, options });
+    return [{ total: "250", data: pageRows }];
   };
-  const userPokemon = {
-    id: "user-created-uuid",
-    name: "my-pokemon",
-    height: 7,
-    weight: 80,
-    hp: 50,
-    image: "https://assets.test/custom.png",
-    attack: 60,
-    defense: 40,
-    speed: 55,
-    types: [{ name: "fire" }],
-  };
-
-  Pokemon.findAll = async () => [userPokemon];
   axios.get = async (...args) => {
     apiCalls.push(args[0]);
     throw new Error("GET /pokemon should not fetch remote details");
   };
   CatalogPokemon.count = async () => 1;
-  CatalogPokemon.findAll = async ({ where }) => {
-    assert.equal(where.isDefault, true);
-    return [{ data: catalogPokemon }];
-  };
   PokemonCatalogSync.findByPk = async () => ({
     status: "complete",
     lastAttemptAt: new Date(),
@@ -264,25 +231,38 @@ test("GET /pokemon and GET /pokemon?name serve the compatible response shape fro
   await new Promise((resolve) => server.once("listening", resolve));
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
-    Pokemon.findAll = originalMethods.pokemonFindAll;
     CatalogPokemon.count = originalMethods.catalogCount;
-    CatalogPokemon.findAll = originalMethods.catalogFindAll;
     PokemonCatalogSync.findByPk = originalMethods.syncFindByPk;
+    conn.query = originalMethods.query;
     axios.get = originalAxiosGet;
   });
 
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  const allResponse = await fetch(`${baseUrl}/pokemon`);
-  const allPokemon = await allResponse.json();
-  const nameResponse = await fetch(`${baseUrl}/pokemon?name=pika`);
-  const matchedPokemon = await nameResponse.json();
+  const firstResponse = await fetch(`${baseUrl}/pokemon`);
+  const firstPage = await firstResponse.json();
+  const secondResponse = await fetch(`${baseUrl}/pokemon?page=2&limit=10&name=pika&type=electric&origin=api&sortAttack=attack-desc`);
+  const secondPage = await secondResponse.json();
+  const cappedResponse = await fetch(`${baseUrl}/pokemon?limit=9999`);
+  const cappedPage = await cappedResponse.json();
+  const invalidResponse = await fetch(`${baseUrl}/pokemon?page=0`);
 
-  assert.equal(allResponse.status, 200);
-  assert.deepEqual(allPokemon.map((pokemon) => pokemon.id), ["user-created-uuid", 25]);
-  assert.equal(allPokemon[1].image, "https://assets.test/pikachu.png");
-  assert.equal(allPokemon[1].shinyImage, "https://assets.test/pikachu-shiny.png");
-  assert.deepEqual(allPokemon[1].types, ["electric"]);
-  assert.deepEqual(allPokemon[0].types, ["fire"]);
-  assert.deepEqual(matchedPokemon.map((pokemon) => pokemon.id), ["user-created-uuid", 25]);
+  assert.equal(firstResponse.status, 200);
+  assert.equal(firstPage.pagination.page, 1);
+  assert.equal(firstPage.pagination.limit, 20);
+  assert.equal(firstPage.pagination.total, 250);
+  assert.equal(firstPage.pagination.totalPages, 13);
+  assert.equal(firstPage.data.length, 20);
+  assert.deepEqual(firstPage.data[0], pageRows[0]);
+  assert.equal(secondResponse.status, 200);
+  assert.equal(secondPage.pagination.page, 2);
+  assert.equal(queryCalls[1].options.bind.offset, 10);
+  assert.equal(queryCalls[1].options.bind.name, "pika");
+  assert.deepEqual(queryCalls[1].options.bind.types, ["electric"]);
+  assert.equal(queryCalls[1].options.bind.origin, false);
+  assert.match(queryCalls[1].sql, /LIMIT \$limit OFFSET \$offset/);
+  assert.match(queryCalls[1].sql, /types @> \$types::text\[\]/);
+  assert.equal(cappedPage.pagination.limit, 100);
+  assert.equal(cappedResponse.status, 200);
+  assert.equal(invalidResponse.status, 400);
   assert.deepEqual(apiCalls, []);
 });
