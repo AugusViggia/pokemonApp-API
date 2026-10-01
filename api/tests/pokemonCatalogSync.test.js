@@ -209,12 +209,16 @@ test("GET /pokemon returns a database-paginated catalog and applies validated se
   const originalAxiosGet = axios.get;
   const apiCalls = [];
   const queryCalls = [];
-  const pageRows = Array.from({ length: 20 }, (_, index) => ({
-    id: String(index + 1), name: `pokemon-${index + 1}`, types: ["electric"], created: false,
-  }));
   conn.query = async (sql, options) => {
     queryCalls.push({ sql, options });
-    return [{ total: "250", data: pageRows }];
+    const { limit, offset } = options.bind;
+    const data = Array.from({ length: Math.min(limit, 250 - offset) }, (_, index) => ({
+      id: String(offset + index + 1),
+      name: `pokemon-${offset + index + 1}`,
+      types: ["electric"],
+      created: false,
+    }));
+    return [{ total: "250", data }];
   };
   axios.get = async (...args) => {
     apiCalls.push(args[0]);
@@ -240,8 +244,10 @@ test("GET /pokemon returns a database-paginated catalog and applies validated se
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const firstResponse = await fetch(`${baseUrl}/pokemon`);
   const firstPage = await firstResponse.json();
-  const secondResponse = await fetch(`${baseUrl}/pokemon?page=2&limit=10&name=pika&type=electric&origin=api&sortAttack=attack-desc`);
+  const secondResponse = await fetch(`${baseUrl}/pokemon?page=2&limit=20&name=pika&type=electric&origin=api&sortAttack=attack-desc`);
   const secondPage = await secondResponse.json();
+  const hundredResponse = await fetch(`${baseUrl}/pokemon?page=1&limit=100`);
+  const hundredPage = await hundredResponse.json();
   const cappedResponse = await fetch(`${baseUrl}/pokemon?limit=9999`);
   const cappedPage = await cappedResponse.json();
   const invalidResponse = await fetch(`${baseUrl}/pokemon?page=0`);
@@ -252,15 +258,28 @@ test("GET /pokemon returns a database-paginated catalog and applies validated se
   assert.equal(firstPage.pagination.total, 250);
   assert.equal(firstPage.pagination.totalPages, 13);
   assert.equal(firstPage.data.length, 20);
-  assert.deepEqual(firstPage.data[0], pageRows[0]);
+  assert.deepEqual(firstPage.data[0], {
+    id: "1", name: "pokemon-1", types: ["electric"], created: false,
+  });
+  assert.ok(Array.isArray(firstPage.data));
   assert.equal(secondResponse.status, 200);
   assert.equal(secondPage.pagination.page, 2);
-  assert.equal(queryCalls[1].options.bind.offset, 10);
+  assert.equal(secondPage.data.length, 20);
+  assert.equal(secondPage.pagination.limit, 20);
+  assert.equal(secondPage.pagination.total, 250);
+  assert.equal(secondPage.pagination.totalPages, 13);
+  assert.equal(queryCalls[1].options.bind.offset, 20);
   assert.equal(queryCalls[1].options.bind.name, "pika");
   assert.deepEqual(queryCalls[1].options.bind.types, ["electric"]);
   assert.equal(queryCalls[1].options.bind.origin, false);
   assert.match(queryCalls[1].sql, /LIMIT \$limit OFFSET \$offset/);
   assert.match(queryCalls[1].sql, /types @> \$types::text\[\]/);
+  assert.equal(hundredResponse.status, 200);
+  assert.equal(hundredPage.data.length, 100);
+  assert.equal(hundredPage.pagination.page, 1);
+  assert.equal(hundredPage.pagination.limit, 100);
+  assert.equal(hundredPage.pagination.total, 250);
+  assert.equal(hundredPage.pagination.totalPages, 3);
   assert.equal(cappedPage.pagination.limit, 100);
   assert.equal(cappedResponse.status, 200);
   assert.equal(invalidResponse.status, 400);
